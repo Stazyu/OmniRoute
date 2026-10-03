@@ -1,17 +1,21 @@
 /**
  * OpenCode Zen free-tier client fingerprint.
  *
- * The upstream gate requires the lowercase file-search quartet `bash`, `glob`, `grep`,
- * `read` — all four present, exactly lowercase. Measured live against
- * https://opencode.ai/zen/v1 on 2026-10-02, on `big-pickle` over /chat/completions and on
- * `muse-spark-1.3-contributor-free` over /responses:
+ * The upstream gate inspects tool names and casing. Measured live against
+ * https://opencode.ai/zen/v1 on 2026-10-02, and independently confirmed by @espokaos-ops
+ * on 2026-10-03 (121 probe records across 9 gated free models, #15322):
  *
- *   no tools ................................ 403 FreeTierError
- *   `_noop` placeholder only ................ 403 FreeTierError
- *   one client tool only .................... 403 FreeTierError
- *   `Bash` only (wrong case) ................ 403 FreeTierError
- *   `bash` only / `bash`+`glob`+`grep` ...... 403 FreeTierError (incomplete)
- *   bash + glob + grep + read ............... 200
+ *   no tools ................................ 403 FreeTierError (9/9 models)
+ *   `_noop` placeholder only ................ 403 FreeTierError (9/9 models)
+ *   one client tool only .................... 403 FreeTierError (9/9 models)
+ *   `Bash + Read` (wrong case) .............. 403 FreeTierError (9/9 models)
+ *   `bash` only / `read` only ............... 403 FreeTierError (4/9 models)
+ *   `bash` + `glob` (incomplete) ............ 403 FreeTierError (3/9 models)
+ *   bash + read (minimal pair) .............. 200 (9/9 models)
+ *   bash + glob + grep + read (quartet) ..... 200 (9/9 models)
+ *
+ * The production constant `OPENCODE_FINGERPRINT_TOOLS` keeps the quartet as a conservative
+ * safety margin closer to the real client's fingerprint.
  *
  * Order is irrelevant, extra tools alongside the quartet are accepted, and a client that
  * spells a member differently (`Bash`, `Read`) must be renamed rather than duplicated:
@@ -23,6 +27,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   OPENCODE_FINGERPRINT_TOOLS,
+  OPENCODE_MEASURED_MINIMUM_FINGERPRINT_TOOLS,
   concealFingerprintToolNames,
   fingerprintPlaceholderTool,
   fingerprintToolKey,
@@ -56,6 +61,17 @@ const flatNamesOf = (tools: unknown): string[] => (tools as FlatTool[]).map((t) 
 
 test("the required fingerprint set is exactly the lowercase file-search quartet", () => {
   assert.deepEqual(OPENCODE_FINGERPRINT_TOOLS, ["bash", "glob", "grep", "read"]);
+});
+
+test("the measured minimum passing combination is {bash, read} as verified on 2026-10-03 (#15322)", () => {
+  assert.deepEqual(OPENCODE_MEASURED_MINIMUM_FINGERPRINT_TOOLS, ["bash", "read"]);
+  // The quartet kept in production is a superset of the measured minimum:
+  for (const minMember of OPENCODE_MEASURED_MINIMUM_FINGERPRINT_TOOLS) {
+    assert.ok(
+      OPENCODE_FINGERPRINT_TOOLS.includes(minMember),
+      `quartet must contain measured minimum member ${minMember}`
+    );
+  }
 });
 
 test("fingerprintToolKey recognises quartet members case-insensitively and nothing else", () => {

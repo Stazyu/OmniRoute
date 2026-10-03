@@ -1,17 +1,25 @@
 /**
  * opencodeFingerprint.ts — the client fingerprint OpenCode Zen's free tier requires.
  *
- * Live probes against https://opencode.ai/zen/v1 on 2026-10-02 show the gate requires the
- * lowercase file-search quartet `bash`, `glob`, `grep`, `read` — all four present, exactly
- * lowercase. Measured on `big-pickle` over /chat/completions and on the Responses surface
- * over /responses:
+ * Live probes against https://opencode.ai/zen/v1 on 2026-10-02 / 2026-10-03 show the gate
+ * inspects tool names and casing. Independent verification by @espokaos-ops across 121 direct
+ * probe records on 9 gated free models (both /chat/completions and /responses, see #15322)
+ * shows that the lowercase pair `bash` + `read` is the minimal passing combination:
  *
- *   no tools ................................ 403 FreeTierError
- *   one placeholder tool only (`_noop`) ..... 403 FreeTierError
- *   one client tool only (`my_custom_tool`) . 403 FreeTierError
- *   `Bash` only (wrong case) ................ 403 FreeTierError
- *   `bash` only, or `bash`+`glob`+`grep` .... 403 FreeTierError (incomplete)
- *   bash + glob + grep + read ............... 200
+ *   no tools ................................ 403 FreeTierError (9/9 models)
+ *   one placeholder tool only (`_noop`) ..... 403 FreeTierError (9/9 models)
+ *   one client tool only (`my_custom_tool`) . 403 FreeTierError (9/9 models)
+ *   `Bash + Read` (wrong case) .............. 403 FreeTierError (9/9 models)
+ *   `bash` only / `read` only ............... 403 FreeTierError (4/9 models)
+ *   `bash` + `glob` (incomplete) ............ 403 FreeTierError (3/9 models)
+ *   bash + read (minimal pair) .............. 200 (9/9 models)
+ *   bash + glob + grep + read (quartet) ..... 200 (9/9 models)
+ *
+ * The production constant `OPENCODE_FINGERPRINT_TOOLS` preserves the file-search quartet
+ * `bash`, `glob`, `grep`, `read` as a conservative safety margin closer to the real OpenCode
+ * client's toolset. (9router originally introduced `bash + read` in 93837af09 and bumped to the
+ * quartet in 822aa958d without a documented rationale; keeping the quartet guards against
+ * upstream gate tightening).
  *
  * Order does not matter and extra tools alongside the quartet are accepted, so the pass
  * appends only the genuinely missing members. A client's own capitalization (`Bash`,
@@ -25,8 +33,14 @@
  * use it without a cycle.
  */
 
-/** Canonical names the upstream free-tier gate requires. */
+/** Canonical names the upstream free-tier gate requires (conservatively kept as quartet). */
 export const OPENCODE_FINGERPRINT_TOOLS: readonly string[] = ["bash", "glob", "grep", "read"];
+
+/**
+ * Smallest combination measured to pass the upstream gate (200) across all 9 gated models
+ * (measured by @espokaos-ops on 2026-10-03 directly against https://opencode.ai/zen/v1).
+ */
+export const OPENCODE_MEASURED_MINIMUM_FINGERPRINT_TOOLS: readonly string[] = ["bash", "read"];
 
 const FINGERPRINT_SET: ReadonlySet<string> = new Set(OPENCODE_FINGERPRINT_TOOLS);
 
